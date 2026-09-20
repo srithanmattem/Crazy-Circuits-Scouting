@@ -16,17 +16,17 @@ The app works with scouting data such as:
 
 ## Where Data Is Stored
 
-In this version, data is stored only in app memory. It is not written to disk by the app and is not uploaded anywhere.
+In this version, data is stored in app memory while the app is running. The app also includes a Base44 sync client so the same data can be uploaded to the team website once the backend endpoint is configured.
 
 ## Network Usage
 
-The current app does not make network requests.
+The app is prepared to send seasons, teams, match notes, and assistant questions to the team's Base44 backend. If the backend URL is blank, sync quietly skips and the app continues working locally.
 
 ## Assistant Behavior
 
-The AI Assistant calls OpenAI's Responses API after the user enters an OpenAI API key in the app. It sends the active season name, game/year fields, teams, match notes, and the user's question to OpenAI.
+The AI Assistant does not ask users for API keys and does not store an AI key in the app. It sends the active season name, game/year fields, teams, match notes, and the user's question to a Base44 assistant endpoint when connected. The website backend should own any private AI provider key.
 
-The API key is stored locally in app storage. Do not ship a shared team app with a hard-coded API key. For production, proxy AI requests through a backend you control.
+If the assistant endpoint is not configured, the app returns a local data-based scouting summary instead.
 
 ## Production Considerations
 

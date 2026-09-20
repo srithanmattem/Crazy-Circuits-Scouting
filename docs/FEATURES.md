@@ -65,14 +65,14 @@ Implemented:
 
 ## Assistant
 
-The assistant sends the current season's scouting data to OpenAI and returns a scouting-focused answer.
+The assistant answers scouting questions from the current season's data. It is designed to call the team Base44 backend so API keys stay off scout devices.
 
 Implemented:
 
-- API key entry
-- Model entry
+- No-login, no-key chat interface
 - Current-season context packaging
-- Responses API request
+- Base44 assistant request
+- Local data-based fallback while the backend is not connected
 - Chat-style question and answer flow
 
 ## Seasons

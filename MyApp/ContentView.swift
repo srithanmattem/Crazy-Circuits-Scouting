@@ -1049,18 +1049,12 @@ private struct CompareTeamsView: View {
 private struct AssistantView: View {
     let season: Season
 
-    @AppStorage("openAIAPIKey") private var apiKey = ""
-    @AppStorage("openAIModel") private var model = "gpt-6-astra"
     @State private var prompt = ""
     @State private var messages: [ChatMessage] = [
-        ChatMessage(role: .assistant, text: "Add your OpenAI API key, then ask me to rank teams, summarize notes, or suggest alliance strategy from this season's data.")
+        ChatMessage(role: .assistant, text: "Ask me to rank teams, summarize match notes, or suggest alliance strategy. I use your team backend when it is connected, so scouts never need API keys.")
     ]
     @State private var isSending = false
     @State private var errorMessage: String?
-
-    private var apiKeyIsReady: Bool {
-        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1068,21 +1062,9 @@ private struct AssistantView: View {
                 PageContainer {
                     PageHeader(
                         title: "AI Assistant",
-                        subtitle: "Uses OpenAI to reason over \(season.displayName).",
+                        subtitle: "Team-friendly scouting help for \(season.displayName).",
                         symbolName: "sparkles"
                     )
-
-                    SectionCard(title: "OpenAI Connection", subtitle: "Your key stays on this device in app storage.") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            SecureField("OpenAI API Key", text: $apiKey)
-                                .textFieldStyle(.roundedBorder)
-                            TextField("Model", text: $model)
-                                .textFieldStyle(.roundedBorder)
-                            Text("Default model follows the current OpenAI quickstart example. For a team app, move API calls to a backend before distributing widely.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
 
                     VStack(spacing: 14) {
                         ForEach(messages) { message in
@@ -1113,7 +1095,7 @@ private struct AssistantView: View {
 
                 Button("Send", systemImage: "paperplane.fill", action: send)
                     .buttonStyle(.borderedProminent)
-                    .disabled(!apiKeyIsReady || isSending || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSending || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding()
             .background(.regularMaterial)
@@ -1123,7 +1105,7 @@ private struct AssistantView: View {
 
     private func send() {
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanPrompt.isEmpty, apiKeyIsReady, !isSending else {
+        guard !cleanPrompt.isEmpty, !isSending else {
             return
         }
 
@@ -1134,11 +1116,9 @@ private struct AssistantView: View {
 
         Task {
             do {
-                let response = try await OpenAIResponsesClient().send(
+                let response = try await ScoutingAIClient().send(
                     prompt: cleanPrompt,
-                    season: season,
-                    model: model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "gpt-6-astra" : model,
-                    apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    season: season
                 )
                 await MainActor.run {
                     messages.append(ChatMessage(role: .assistant, text: response))
@@ -1154,125 +1134,49 @@ private struct AssistantView: View {
     }
 }
 
-private struct OpenAIResponsesClient {
-    func send(prompt: String, season: Season, model: String, apiKey: String) async throws -> String {
-        guard let url = URL(string: "https://api.openai.com/v1/responses") else {
-            throw AssistantError.invalidURL
+private struct ScoutingAIClient {
+    @MainActor
+    func send(prompt: String, season: Season) async throws -> String {
+        do {
+            return try await Base44SyncClient().askAssistant(prompt: prompt, season: season)
+        } catch Base44SyncError.notConfigured {
+            return LocalScoutingAssistant().answer(prompt: prompt, season: season)
         }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(
-            OpenAIResponseRequest(
-                model: model,
-                input: buildInput(prompt: prompt, season: season)
-            )
-        )
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AssistantError.invalidResponse
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "No response body"
-            throw AssistantError.apiError("OpenAI request failed (\(httpResponse.statusCode)): \(body)")
-        }
-
-        let decoded = try JSONDecoder().decode(OpenAIResponseEnvelope.self, from: data)
-        guard let text = decoded.bestText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AssistantError.emptyResponse
-        }
-
-        return text
     }
+}
 
-    private func buildInput(prompt: String, season: Season) -> String {
-        let teams = season.teams.isEmpty
-            ? "No teams have been scouted yet."
-            : season.teams.map { team in
-                "Team \(team.number) \(team.name): region \(team.region), drive train \(team.driveTrain), auto \(team.autoScore), tele-op \(team.teleOpScore), endgame \(team.endgameScore), overall \(team.overallScore), notes: \(team.notes.isEmpty ? "none" : team.notes)"
-            }.joined(separator: "\n")
+private struct LocalScoutingAssistant {
+    func answer(prompt: String, season: Season) -> String {
+        let topTeams = season.teams
+            .sorted { $0.overallScore > $1.overallScore }
+            .prefix(3)
+            .map { "#\($0.number) \($0.name) (\($0.overallScore) pts)" }
+            .joined(separator: ", ")
 
-        let notes = season.matchNotes.isEmpty
+        let noteSummary = season.matchNotes.isEmpty
             ? "No match notes have been recorded yet."
-            : season.matchNotes.map { note in
-                "\(note.event), team \(note.teamNumber) \(note.teamName), score \(note.score): \(note.summary)"
-            }.joined(separator: "\n")
+            : "\(season.matchNotes.count) match notes are available, with an average recorded score of \(averageScore(in: season.matchNotes))."
+
+        let teamSummary = season.teams.isEmpty
+            ? "No teams have been scouted yet."
+            : "Top teams by scouting score: \(topTeams)."
 
         return """
-        You are Circuit Scout, an FTC robotics scouting assistant. Be concise, practical, and honest when data is missing. Use only the scouting data below unless the user asks for general strategy advice.
+        Backend AI is not connected yet, so here is a data-based scouting summary from this device.
 
-        Season: \(season.displayName)
-        Game: \(season.gameName.isEmpty ? "Unspecified" : season.gameName)
-        Year: \(season.year.isEmpty ? "Unspecified" : season.year)
+        \(teamSummary)
+        \(noteSummary)
 
-        Teams:
-        \(teams)
-
-        Match notes:
-        \(notes)
-
-        User question:
-        \(prompt)
+        Once your Base44 AI endpoint is added, this same question will be answered by the shared team AI automatically with no API keys or login on scout devices.
         """
     }
-}
 
-private struct OpenAIResponseRequest: Encodable {
-    let model: String
-    let input: String
-}
-
-private struct OpenAIResponseEnvelope: Decodable {
-    let outputText: String?
-    let output: [OpenAIOutputItem]?
-
-    enum CodingKeys: String, CodingKey {
-        case outputText = "output_text"
-        case output
-    }
-
-    var bestText: String? {
-        if let outputText {
-            return outputText
+    private func averageScore(in notes: [MatchNote]) -> Int {
+        guard !notes.isEmpty else {
+            return 0
         }
 
-        return output?
-            .flatMap { $0.content ?? [] }
-            .compactMap { $0.text }
-            .joined(separator: "\n")
-    }
-}
-
-private struct OpenAIOutputItem: Decodable {
-    let content: [OpenAIContentItem]?
-}
-
-private struct OpenAIContentItem: Decodable {
-    let text: String?
-}
-
-private enum AssistantError: LocalizedError {
-    case invalidURL
-    case invalidResponse
-    case emptyResponse
-    case apiError(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidURL:
-            "The OpenAI URL is invalid."
-        case .invalidResponse:
-            "OpenAI returned an invalid response."
-        case .emptyResponse:
-            "OpenAI returned an empty answer."
-        case .apiError(let message):
-            message
-        }
+        return notes.map(\.score).reduce(0, +) / notes.count
     }
 }
 
@@ -1291,6 +1195,20 @@ private struct Base44SyncClient {
 
     func pushMatchNote(_ note: MatchNote, seasonID: UUID) async throws {
         try await post(MatchNoteSyncPayload(note: note, seasonID: seasonID), path: "match-notes")
+    }
+
+    @MainActor
+    func askAssistant(prompt: String, season: Season) async throws -> String {
+        let response: AssistantSyncResponse = try await postForResponse(
+            AssistantSyncRequest(prompt: prompt, season: AssistantSeasonContext(season: season)),
+            path: "assistant"
+        )
+
+        guard let text = response.bestText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw Base44SyncError.emptyResponse
+        }
+
+        return text
     }
 
     private func post<Payload: Encodable>(_ payload: Payload, path: String) async throws {
@@ -1323,6 +1241,118 @@ private struct Base44SyncClient {
             let body = String(data: data, encoding: .utf8) ?? "No response body"
             throw Base44SyncError.serverError("Base44 sync failed (\(httpResponse.statusCode)): \(body)")
         }
+    }
+
+    private func postForResponse<Payload: Encodable, Response: Decodable>(_ payload: Payload, path: String) async throws -> Response {
+        let trimmedBaseURL = Self.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBaseURL.isEmpty else {
+            throw Base44SyncError.notConfigured
+        }
+
+        guard let url = URL(string: trimmedBaseURL)?.appendingPathComponent(path) else {
+            throw Base44SyncError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let trimmedToken = Self.apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedToken.isEmpty {
+            request.setValue("Bearer \(trimmedToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        request.httpBody = try JSONEncoder.base44.encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw Base44SyncError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "No response body"
+            throw Base44SyncError.serverError("Base44 request failed (\(httpResponse.statusCode)): \(body)")
+        }
+
+        return try JSONDecoder().decode(Response.self, from: data)
+    }
+}
+
+private struct AssistantSyncRequest: Encodable {
+    let prompt: String
+    let season: AssistantSeasonContext
+}
+
+private struct AssistantSeasonContext: Encodable {
+    let id: UUID
+    let name: String
+    let gameName: String
+    let year: String
+    let teams: [AssistantTeamContext]
+    let matchNotes: [AssistantMatchNoteContext]
+
+    @MainActor
+    init(season: Season) {
+        id = season.id
+        name = season.displayName
+        gameName = season.gameName
+        year = season.year
+        teams = season.teams.map(AssistantTeamContext.init)
+        matchNotes = season.matchNotes.map(AssistantMatchNoteContext.init)
+    }
+}
+
+private struct AssistantTeamContext: Encodable {
+    let number: Int
+    let name: String
+    let region: String
+    let driveTrain: String
+    let autoScore: Int
+    let teleOpScore: Int
+    let endgameScore: Int
+    let overallScore: Int
+    let notes: String
+
+    @MainActor
+    init(team: Team) {
+        number = team.number
+        name = team.name
+        region = team.region
+        driveTrain = team.driveTrain
+        autoScore = team.autoScore
+        teleOpScore = team.teleOpScore
+        endgameScore = team.endgameScore
+        overallScore = team.overallScore
+        notes = team.notes
+    }
+}
+
+private struct AssistantMatchNoteContext: Encodable {
+    let teamNumber: Int
+    let teamName: String
+    let event: String
+    let summary: String
+    let score: Int
+    let date: Date
+
+    @MainActor
+    init(note: MatchNote) {
+        teamNumber = note.teamNumber
+        teamName = note.teamName
+        event = note.event
+        summary = note.summary
+        score = note.score
+        date = note.date
+    }
+}
+
+private struct AssistantSyncResponse: Decodable {
+    let answer: String?
+    let text: String?
+    let response: String?
+
+    var bestText: String? {
+        answer ?? text ?? response
     }
 }
 
@@ -1403,6 +1433,8 @@ private struct MatchNoteSyncPayload: Encodable {
 private enum Base44SyncError: LocalizedError {
     case invalidURL
     case invalidResponse
+    case notConfigured
+    case emptyResponse
     case serverError(String)
 
     var errorDescription: String? {
@@ -1411,6 +1443,10 @@ private enum Base44SyncError: LocalizedError {
             "The Base44 sync URL is invalid."
         case .invalidResponse:
             "Base44 returned an invalid response."
+        case .notConfigured:
+            "Base44 is not connected yet."
+        case .emptyResponse:
+            "Base44 returned an empty answer."
         case .serverError(let message):
             message
         }

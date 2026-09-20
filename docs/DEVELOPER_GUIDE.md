@@ -18,7 +18,8 @@ Current core types:
 | `MatchNote` | Match observation model |
 | `TeamDraft` | Editable team form state |
 | `NoteDraft` | Editable note form state |
-| `OpenAIResponsesClient` | Minimal OpenAI Responses API client |
+| `Base44SyncClient` | Automatic sync and assistant backend client |
+| `ScoutingAIClient` | Assistant coordinator with Base44-first behavior |
 
 The UI is split into small SwiftUI views:
 
@@ -60,6 +61,19 @@ The current app uses in-memory data. Good next options:
 | Cloud backend | Best for multi-device team syncing |
 
 When adding persistence, keep `ContentView` as the navigation owner and move data operations into a model or store type.
+
+## Base44 Sync
+
+`Base44SyncClient` is the single connection point for the website backend.
+
+Configured paths:
+
+- `POST /seasons`
+- `POST /teams`
+- `POST /match-notes`
+- `POST /assistant`
+
+The `baseURL` constant is intentionally blank until the Base44 endpoint is ready. With a blank URL, sync calls skip quietly and the assistant uses a local data-based response.
 
 ## Suggested Next Model Layer
 
@@ -107,6 +121,7 @@ Before publishing changes:
 ## Known Limitations
 
 - Data is not persisted after app restart.
-- The assistant calls OpenAI directly from the client; production apps should use a backend proxy.
+- The Base44 backend URL still needs to be connected.
+- The assistant uses a local fallback until the Base44 assistant endpoint is configured.
 - There are no automated tests yet.
 - The project currently keeps all UI in one Swift file for simplicity.

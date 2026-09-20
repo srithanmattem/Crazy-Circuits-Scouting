@@ -11,7 +11,8 @@ Circuit Scout is a SwiftUI scouting app for FTC teams. It gives drive teams and 
 - Match notes with quick add and delete flows
 - Team comparison view with category score bars and strategy insights
 - Season picker with blank new seasons
-- OpenAI-powered scouting assistant that reasons over the active season
+- AI scouting assistant designed to run through a team Base44 backend, with no API keys on scout devices
+- Automatic Base44 sync foundation for seasons, teams, and match notes
 - Responsive SwiftUI layout for Mac and iPad-style window sizes
 
 ## Project Structure
@@ -19,7 +20,7 @@ Circuit Scout is a SwiftUI scouting app for FTC teams. It gives drive teams and 
 | Path | Purpose |
 | --- | --- |
 | `MyApp/MyApp.swift` | App entry point |
-| `MyApp/ContentView.swift` | Main app UI, blank season state, and OpenAI assistant integration |
+| `MyApp/ContentView.swift` | Main app UI, blank season state, Base44 sync, and assistant integration |
 | `MyApp/Assets.xcassets` | App asset catalog |
 | `docs/USER_GUIDE.md` | How to use the app |
 | `docs/DEVELOPER_GUIDE.md` | How the code is organized |
@@ -41,11 +42,11 @@ Circuit Scout is a SwiftUI scouting app for FTC teams. It gives drive teams and 
 
 ## Current Data Model
 
-The app starts with a blank season and stores data in memory while it is running. Changes made while the app is open are reflected across the UI, but they are not persisted after relaunch. A future production version should add persistence with SwiftData, Core Data, a document format, or a backend.
+The app starts with a blank season and stores data in memory while it is running. Changes made while the app is open are reflected across the UI. The code also includes a Base44 sync client so seasons, teams, and match notes can automatically sync to the existing website once the backend endpoint is added.
 
 ## AI Assistant
 
-The AI Assistant calls OpenAI's Responses API from the app after you enter an OpenAI API key. The key is stored locally in app storage. For a distributed team app, route AI calls through a backend so API keys are not placed on player or scout devices.
+The AI Assistant does not ask scouts for API keys. It is wired to call a Base44 backend assistant endpoint, so the website can safely own the AI provider key. Until that endpoint is connected, the app returns a local data-based scouting summary instead of failing.
 
 ## Documentation
 

@@ -13,7 +13,7 @@ Use the sidebar to move between the main areas of the app:
 | Teams | Search, edit, compare, or delete teams |
 | Match Notes | Record observations from matches |
 | Compare | Compare selected teams side by side |
-| AI Assistant | Ask OpenAI-powered questions about the current season |
+| AI Assistant | Ask scouting questions about the current season |
 
 ## Seasons
 
@@ -109,13 +109,13 @@ Use this screen before alliance selection or while planning match strategy.
 
 ## Assistant
 
-The AI Assistant uses OpenAI to answer questions from the current season's teams and match notes.
+The AI Assistant answers questions from the current season's teams and match notes. Scouts do not need accounts, logins, or API keys.
 
-Before using it:
+To use it:
 
 1. Open `AI Assistant`.
-2. Paste your OpenAI API key into `OpenAI API Key`.
-3. Leave the model field as-is, or enter another model your OpenAI account can use.
+2. Type a scouting question.
+3. Press `Send`.
 
 Try asking:
 
@@ -125,7 +125,7 @@ Try asking:
 - `Endgame or parking recommendation?`
 - `Summarize notes`
 
-The assistant sends the active season's scouting data to OpenAI with your question. For a production team app, use a backend service instead of putting an API key directly on shared devices.
+When the Base44 assistant endpoint is connected, the app sends the active season's scouting context to the team backend and shows the answer. Until then, it provides a local scouting summary from the data already on the device.
 
 ## Data Persistence
 
