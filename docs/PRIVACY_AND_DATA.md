@@ -24,7 +24,9 @@ The current app does not make network requests.
 
 ## Assistant Behavior
 
-The Assistant is local and rule-based. It answers from the teams and match notes currently loaded in the app. It does not send prompts or scouting data to an external service.
+The AI Assistant calls OpenAI's Responses API after the user enters an OpenAI API key in the app. It sends the active season name, game/year fields, teams, match notes, and the user's question to OpenAI.
+
+The API key is stored locally in app storage. Do not ship a shared team app with a hard-coded API key. For production, proxy AI requests through a backend you control.
 
 ## Production Considerations
 
@@ -36,4 +38,3 @@ Before using this for real team operations, consider adding:
 - Permission controls for shared devices
 - Clear data reset controls
 - Privacy review if syncing to a server
-

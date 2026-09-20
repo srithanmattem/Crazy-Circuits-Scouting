@@ -65,13 +65,24 @@ Implemented:
 
 ## Assistant
 
-The assistant answers simple questions from current local data.
+The assistant sends the current season's scouting data to OpenAI and returns a scouting-focused answer.
 
-Implemented intents:
+Implemented:
 
-- Best overall team
-- Best autonomous team
-- Best tele-op team
-- Best endgame team
-- Match note summary
+- API key entry
+- Model entry
+- Current-season context packaging
+- Responses API request
+- Chat-style question and answer flow
 
+## Seasons
+
+Season management lets each year or game start from a clean slate.
+
+Implemented:
+
+- Create new blank season
+- Rename season
+- Edit game name and year
+- Switch active season
+- Delete active season when another season exists

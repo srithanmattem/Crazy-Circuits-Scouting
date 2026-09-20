@@ -13,11 +13,12 @@ Current core types:
 | `ContentView` | Owns app navigation and top-level state |
 | `AppSection` | Sidebar destinations |
 | `ScoutingTab` | Steps in the scouting form |
+| `Season` | Active season metadata, teams, and notes |
 | `Team` | Scouted team model |
 | `MatchNote` | Match observation model |
 | `TeamDraft` | Editable team form state |
 | `NoteDraft` | Editable note form state |
-| `SampleData` | Initial in-memory data |
+| `OpenAIResponsesClient` | Minimal OpenAI Responses API client |
 
 The UI is split into small SwiftUI views:
 
@@ -33,18 +34,19 @@ The UI is split into small SwiftUI views:
 
 `ContentView` owns:
 
-- `teams`
-- `matchNotes`
+- `seasons`
+- `activeSeasonID`
 - `selectedSection`
 - `selectedTeamID`
 - `selectedComparisonTeamIDs`
 
 Child views receive bindings when they need to mutate data:
 
-- `ScoutInputView` updates teams and notes
-- `TeamDatabaseView` adds, edits, deletes, and selects teams
-- `MatchNotesView` adds and deletes notes
-- `CompareTeamsView` edits the comparison selection
+- `SidebarView` creates, switches, renames, and deletes seasons
+- `ScoutInputView` updates teams and notes inside the active season
+- `TeamDatabaseView` adds, edits, deletes, and selects teams inside the active season
+- `MatchNotesView` adds and deletes notes inside the active season
+- `CompareTeamsView` edits the comparison selection for the active season
 
 ## Adding Persistence
 
@@ -105,7 +107,6 @@ Before publishing changes:
 ## Known Limitations
 
 - Data is not persisted after app restart.
-- The assistant is rule-based and local.
+- The assistant calls OpenAI directly from the client; production apps should use a backend proxy.
 - There are no automated tests yet.
 - The project currently keeps all UI in one Swift file for simplicity.
-

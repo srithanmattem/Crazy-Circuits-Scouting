@@ -13,7 +13,22 @@ Use the sidebar to move between the main areas of the app:
 | Teams | Search, edit, compare, or delete teams |
 | Match Notes | Record observations from matches |
 | Compare | Compare selected teams side by side |
-| Assistant | Ask quick questions about the current data |
+| AI Assistant | Ask OpenAI-powered questions about the current season |
+
+## Seasons
+
+The season controls are at the bottom of the sidebar.
+
+You can:
+
+- Rename the current season
+- Add a game name
+- Add a year
+- Create a new blank season
+- Switch between seasons
+- Delete a season when more than one exists
+
+New seasons start blank. They do not include sample teams or sample notes.
 
 ## Dashboard
 
@@ -94,7 +109,15 @@ Use this screen before alliance selection or while planning match strategy.
 
 ## Assistant
 
-The Assistant gives simple answers from the current in-app data. Try asking:
+The AI Assistant uses OpenAI to answer questions from the current season's teams and match notes.
+
+Before using it:
+
+1. Open `AI Assistant`.
+2. Paste your OpenAI API key into `OpenAI API Key`.
+3. Leave the model field as-is, or enter another model your OpenAI account can use.
+
+Try asking:
 
 - `Who is best overall?`
 - `Who is strongest in auto?`
@@ -102,9 +125,8 @@ The Assistant gives simple answers from the current in-app data. Try asking:
 - `Endgame or parking recommendation?`
 - `Summarize notes`
 
-The assistant is local and rule-based in this version. It does not call an external AI service.
+The assistant sends the active season's scouting data to OpenAI with your question. For a production team app, use a backend service instead of putting an API key directly on shared devices.
 
 ## Data Persistence
 
-This version stores data in memory while the app is open. If you close and relaunch the app, it returns to sample data. Add persistent storage before using it as a production scouting record.
-
+This version stores data in memory while the app is open. If you close and relaunch the app, it returns to a blank season. Add persistent storage before using it as a production scouting record.

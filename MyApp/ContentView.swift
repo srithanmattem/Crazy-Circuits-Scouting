@@ -1,19 +1,31 @@
+import Foundation
 import SwiftUI
 
 struct ContentView: View {
     @State private var selectedSection: AppSection? = .dashboard
+    @State private var seasons: [Season] = [Season.blank()]
+    @State private var activeSeasonID: UUID?
     @State private var searchText = ""
-    @State private var teams = SampleData.teams
-    @State private var matchNotes = SampleData.matchNotes
-    @State private var selectedTeamID: Int? = 731
-    @State private var selectedComparisonTeamIDs: Set<Int> = [731, 5795, 7105]
+    @State private var selectedTeamID: Int?
+    @State private var selectedComparisonTeamIDs: Set<Int> = []
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $selectedSection)
+            SidebarView(
+                selection: $selectedSection,
+                seasons: $seasons,
+                activeSeasonID: activeSeasonIDBinding,
+                onNewSeason: createSeason,
+                onDeleteSeason: deleteActiveSeason
+            )
         } detail: {
             content
                 .navigationTitle(selectedSection?.title ?? "Circuit Scout")
+        }
+        .onAppear {
+            if activeSeasonID == nil {
+                activeSeasonID = seasons.first?.id
+            }
         }
     }
 
@@ -22,27 +34,76 @@ struct ContentView: View {
         switch selectedSection ?? .dashboard {
         case .dashboard:
             DashboardView(
-                teams: teams,
-                notes: matchNotes,
+                season: activeSeason,
                 onStartScouting: { selectedSection = .scout },
-                onCompare: { selectedSection = .compare }
+                onCompare: { selectedSection = .compare },
+                onNewSeason: createSeason
             )
         case .scout:
-            ScoutInputView(teams: $teams, notes: $matchNotes)
+            ScoutInputView(season: activeSeasonBinding)
         case .teams:
             TeamDatabaseView(
-                teams: $teams,
+                season: activeSeasonBinding,
                 searchText: $searchText,
                 selectedTeamID: $selectedTeamID,
                 selectedComparisonTeamIDs: $selectedComparisonTeamIDs
             )
         case .matches:
-            MatchNotesView(teams: teams, notes: $matchNotes)
+            MatchNotesView(season: activeSeasonBinding)
         case .compare:
-            CompareTeamsView(teams: teams, selectedTeamIDs: $selectedComparisonTeamIDs)
+            CompareTeamsView(season: activeSeason, selectedTeamIDs: $selectedComparisonTeamIDs)
         case .assistant:
-            AssistantView(teams: teams, notes: matchNotes)
+            AssistantView(season: activeSeason)
         }
+    }
+
+    private var activeSeason: Season {
+        seasons.first { $0.id == activeSeasonID } ?? seasons[0]
+    }
+
+    private var activeSeasonIDBinding: Binding<UUID?> {
+        Binding(
+            get: { activeSeasonID ?? seasons.first?.id },
+            set: { newValue in
+                activeSeasonID = newValue
+                selectedTeamID = nil
+                selectedComparisonTeamIDs = []
+                searchText = ""
+            }
+        )
+    }
+
+    private var activeSeasonBinding: Binding<Season> {
+        Binding(
+            get: { activeSeason },
+            set: { updatedSeason in
+                guard let index = seasons.firstIndex(where: { $0.id == updatedSeason.id }) else {
+                    return
+                }
+                seasons[index] = updatedSeason
+            }
+        )
+    }
+
+    private func createSeason() {
+        let newSeason = Season.blank(number: seasons.count + 1)
+        seasons.append(newSeason)
+        activeSeasonID = newSeason.id
+        selectedSection = .dashboard
+        selectedTeamID = nil
+        selectedComparisonTeamIDs = []
+        searchText = ""
+    }
+
+    private func deleteActiveSeason() {
+        guard seasons.count > 1, let activeSeasonID else {
+            return
+        }
+
+        seasons.removeAll { $0.id == activeSeasonID }
+        self.activeSeasonID = seasons.first?.id
+        selectedTeamID = nil
+        selectedComparisonTeamIDs = []
     }
 }
 
@@ -63,7 +124,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
         case .teams: "Teams"
         case .matches: "Match Notes"
         case .compare: "Compare"
-        case .assistant: "Assistant"
+        case .assistant: "AI Assistant"
         }
     }
 
@@ -86,6 +147,39 @@ private enum ScoutingTab: String, CaseIterable, Identifiable {
     case endgame = "Endgame"
 
     var id: Self { self }
+}
+
+private struct Season: Identifiable, Hashable {
+    let id: UUID
+    var name: String
+    var gameName: String
+    var year: String
+    var teams: [Team]
+    var matchNotes: [MatchNote]
+
+    static func blank(number: Int = 1) -> Season {
+        Season(
+            id: UUID(),
+            name: number == 1 ? "New Season" : "New Season \(number)",
+            gameName: "",
+            year: "",
+            teams: [],
+            matchNotes: []
+        )
+    }
+
+    var displayName: String {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedName.isEmpty ? "Untitled Season" : trimmedName
+    }
+
+    var subtitle: String {
+        let parts = [gameName, year]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return parts.isEmpty ? "Blank season" : parts.joined(separator: " - ")
+    }
 }
 
 private struct Team: Identifiable, Hashable {
@@ -131,9 +225,9 @@ private struct TeamDraft {
     var name = ""
     var region = ""
     var driveTrain = "Mecanum"
-    var autoScore = 8.0
-    var teleOpScore = 18.0
-    var endgameScore = 8.0
+    var autoScore = 0.0
+    var teleOpScore = 0.0
+    var endgameScore = 0.0
     var notes = ""
 
     init() {}
@@ -175,10 +269,10 @@ private struct TeamDraft {
 }
 
 private struct NoteDraft {
-    var teamNumber = "731"
-    var event = "Qualifier"
+    var teamNumber = ""
+    var event = ""
     var summary = ""
-    var score = 30.0
+    var score = 0.0
 
     var canSave: Bool {
         Int(teamNumber) != nil
@@ -187,44 +281,51 @@ private struct NoteDraft {
     }
 }
 
-private enum SampleData {
-    static let teams: [Team] = [
-        Team(number: 731, name: "Wannabee Strange", region: "NorCal", driveTrain: "Mecanum", autoScore: 12, teleOpScore: 22, endgameScore: 8, lastSeen: "Today", notes: "Reliable park and quick reset after defense."),
-        Team(number: 5795, name: "Back To The Drawing Board", region: "Georgia", driveTrain: "Swerve", autoScore: 10, teleOpScore: 25, endgameScore: 7, lastSeen: "Yesterday", notes: "Great driver control. Watch intake consistency."),
-        Team(number: 6078, name: "Cut the Red Wire", region: "Texas", driveTrain: "Tank", autoScore: 9, teleOpScore: 19, endgameScore: 11, lastSeen: "Sep 18", notes: "Strong endgame decision-making."),
-        Team(number: 7083, name: "TundraBots", region: "Minnesota", driveTrain: "Mecanum", autoScore: 14, teleOpScore: 18, endgameScore: 10, lastSeen: "Sep 17", notes: "Best autonomous sample path in the group."),
-        Team(number: 7105, name: "SWIFT Intergalactic Space Llamas", region: "Washington", driveTrain: "Swerve", autoScore: 11, teleOpScore: 21, endgameScore: 12, lastSeen: "Sep 15", notes: "Flexible strategy, comfortable filling gaps.")
-    ]
-
-    static let matchNotes: [MatchNote] = [
-        MatchNote(teamNumber: 731, teamName: "Wannabee Strange", event: "Qualifier 12", summary: "Consistent cycles, fast reset after defense, reliable parking.", score: 42, date: .now),
-        MatchNote(teamNumber: 5795, teamName: "Back To The Drawing Board", event: "Qualifier 16", summary: "Strong tele-op driver control with occasional intake jams.", score: 44, date: .now.addingTimeInterval(-86_400)),
-        MatchNote(teamNumber: 6078, teamName: "Cut the Red Wire", event: "Qualifier 18", summary: "Best autonomous path so far, needs a cleaner endgame approach.", score: 39, date: .now.addingTimeInterval(-172_800))
-    ]
-}
-
 private struct SidebarView: View {
     @Binding var selection: AppSection?
+    @Binding var seasons: [Season]
+    @Binding var activeSeasonID: UUID?
+    let onNewSeason: () -> Void
+    let onDeleteSeason: () -> Void
 
     var body: some View {
-        List(AppSection.allCases, selection: $selection) { section in
-            NavigationLink(value: section) {
-                Label(section.title, systemImage: section.symbolName)
+        List(selection: $selection) {
+            Section("Navigate") {
+                ForEach(AppSection.allCases) { section in
+                    NavigationLink(value: section) {
+                        Label(section.title, systemImage: section.symbolName)
+                    }
+                }
             }
         }
         .navigationTitle("Circuit Scout")
         .safeAreaInset(edge: .bottom) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Season")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Decode 2025-26")
-                    .font(.headline)
-                Label("Ready to scout", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Season", selection: $activeSeasonID) {
+                    ForEach(seasons) { season in
+                        Text(season.displayName).tag(Optional(season.id))
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if let index = seasons.firstIndex(where: { $0.id == activeSeasonID }) {
+                    TextField("Season name", text: $seasons[index].name)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Game name", text: $seasons[index].gameName)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Year", text: $seasons[index].year)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                HStack {
+                    Button("New", systemImage: "plus", action: onNewSeason)
+                    Spacer()
+                    Button("Delete", systemImage: "trash", action: onDeleteSeason)
+                        .disabled(seasons.count <= 1)
+                        .tint(.red)
+                }
+                .buttonStyle(.bordered)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .background(.thinMaterial)
         }
@@ -232,57 +333,68 @@ private struct SidebarView: View {
 }
 
 private struct DashboardView: View {
-    let teams: [Team]
-    let notes: [MatchNote]
+    let season: Season
     let onStartScouting: () -> Void
     let onCompare: () -> Void
+    let onNewSeason: () -> Void
 
     private var sortedTeams: [Team] {
-        teams.sorted { $0.overallScore > $1.overallScore }
+        season.teams.sorted { $0.overallScore > $1.overallScore }
     }
 
     var body: some View {
         ScrollView {
             PageContainer {
                 PageHeader(
-                    title: "Dashboard",
-                    subtitle: "A calm command center for your next match.",
-                    symbolName: "chart.bar.xaxis"
+                    title: season.displayName,
+                    subtitle: season.subtitle,
+                    symbolName: "flag.checkered"
                 ) {
                     HStack {
+                        Button("New Season", systemImage: "calendar.badge.plus", action: onNewSeason)
+                            .buttonStyle(.bordered)
                         Button("Scout", systemImage: "square.and.pencil", action: onStartScouting)
                             .buttonStyle(.borderedProminent)
-                        Button("Compare", systemImage: "arrow.left.arrow.right", action: onCompare)
-                            .buttonStyle(.bordered)
                     }
                 }
 
                 LazyVGrid(columns: adaptiveColumns(minimum: 210), spacing: 16) {
-                    MetricCard(title: "Teams Scouted", value: "\(teams.count)", symbolName: "person.3.fill", tint: .blue)
-                    MetricCard(title: "Match Notes", value: "\(notes.count)", symbolName: "note.text", tint: .orange)
+                    MetricCard(title: "Teams Scouted", value: "\(season.teams.count)", symbolName: "person.3.fill", tint: .blue)
+                    MetricCard(title: "Match Notes", value: "\(season.matchNotes.count)", symbolName: "note.text", tint: .orange)
                     MetricCard(title: "Top Score", value: "\(sortedTeams.first?.overallScore ?? 0)", symbolName: "trophy.fill", tint: .yellow)
-                    MetricCard(title: "Regions", value: "\(Set(teams.map(\.region)).count)", symbolName: "map.fill", tint: .green)
+                    MetricCard(title: "Regions", value: "\(Set(season.teams.map(\.region)).count)", symbolName: "map.fill", tint: .green)
                 }
 
-                if let topTeam = sortedTeams.first {
+                if season.teams.isEmpty {
+                    SectionCard(title: "Ready for a Fresh Season", subtitle: "This season starts blank.") {
+                        EmptyStateView(symbolName: "plus.circle", title: "No scouting data yet", message: "Start by adding your first team or match note. Nothing here is sample data.")
+                        Button("Start Scouting", systemImage: "square.and.pencil", action: onStartScouting)
+                            .buttonStyle(.borderedProminent)
+                            .frame(maxWidth: .infinity)
+                    }
+                } else if let topTeam = sortedTeams.first {
                     HeroCard(team: topTeam)
                 }
 
                 LazyVGrid(columns: adaptiveColumns(minimum: 320), spacing: 16) {
                     SectionCard(title: "Top Teams", subtitle: "Ranked by combined auto, tele-op, and endgame performance.") {
-                        VStack(spacing: 12) {
-                            ForEach(Array(sortedTeams.prefix(4))) { team in
-                                TeamRankRow(team: team)
+                        if sortedTeams.isEmpty {
+                            EmptyStateView(symbolName: "person.3.sequence", title: "No teams yet", message: "Add teams from Scout or Teams.")
+                        } else {
+                            VStack(spacing: 12) {
+                                ForEach(Array(sortedTeams.prefix(4))) { team in
+                                    TeamRankRow(team: team)
+                                }
                             }
                         }
                     }
 
                     SectionCard(title: "Recent Notes", subtitle: "Fast context for drive team conversations.") {
-                        if notes.isEmpty {
+                        if season.matchNotes.isEmpty {
                             EmptyStateView(symbolName: "note.text", title: "No notes yet", message: "Add notes after each match to build useful history.")
                         } else {
                             VStack(spacing: 12) {
-                                ForEach(notes.prefix(3)) { note in
+                                ForEach(season.matchNotes.prefix(3)) { note in
                                     NoteSummaryRow(note: note)
                                 }
                             }
@@ -296,12 +408,11 @@ private struct DashboardView: View {
 }
 
 private struct ScoutInputView: View {
-    @Binding var teams: [Team]
-    @Binding var notes: [MatchNote]
+    @Binding var season: Season
 
     @State private var selectedTab: ScoutingTab = .teamInfo
-    @State private var draft = TeamDraft(team: SampleData.teams[0])
-    @State private var matchEvent = "Qualifier"
+    @State private var draft = TeamDraft()
+    @State private var matchEvent = ""
     @State private var didSave = false
 
     var body: some View {
@@ -309,7 +420,7 @@ private struct ScoutInputView: View {
             PageContainer {
                 PageHeader(
                     title: "Scout a Team",
-                    subtitle: "Work through one focused step at a time.",
+                    subtitle: "Add real data for \(season.displayName).",
                     symbolName: "square.and.pencil"
                 )
 
@@ -346,6 +457,7 @@ private struct ScoutInputView: View {
                     Button("Reset", systemImage: "arrow.counterclockwise") {
                         draft = TeamDraft()
                         selectedTab = .teamInfo
+                        matchEvent = ""
                     }
                     .buttonStyle(.bordered)
 
@@ -363,14 +475,14 @@ private struct ScoutInputView: View {
         .alert("Scouting saved", isPresented: $didSave) {
             Button("Done", role: .cancel) {}
         } message: {
-            Text("The team database and match notes were updated.")
+            Text("The season database and match notes were updated.")
         }
     }
 
     private var selectedTabSubtitle: String {
         switch selectedTab {
         case .teamInfo: "Identify the team and robot setup."
-        case .autonomous: "Capture autonomous reliability without extra clutter."
+        case .autonomous: "Capture autonomous performance."
         case .teleOp: "Record driver-control performance and match context."
         case .endgame: "Finish with endgame scoring and drive-team notes."
         }
@@ -381,18 +493,18 @@ private struct ScoutInputView: View {
             return
         }
 
-        if let existingIndex = teams.firstIndex(where: { $0.id == team.id }) {
-            teams[existingIndex] = team
+        if let existingIndex = season.teams.firstIndex(where: { $0.id == team.id }) {
+            season.teams[existingIndex] = team
         } else {
-            teams.append(team)
+            season.teams.append(team)
         }
 
         let summary = draft.notes.isEmpty ? "Scouting data submitted for \(team.name)." : draft.notes
-        notes.insert(
+        season.matchNotes.insert(
             MatchNote(
                 teamNumber: team.number,
                 teamName: team.name,
-                event: matchEvent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Practice" : matchEvent,
+                event: matchEvent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unspecified match" : matchEvent,
                 summary: summary,
                 score: team.overallScore,
                 date: .now
@@ -405,7 +517,7 @@ private struct ScoutInputView: View {
 }
 
 private struct TeamDatabaseView: View {
-    @Binding var teams: [Team]
+    @Binding var season: Season
     @Binding var searchText: String
     @Binding var selectedTeamID: Int?
     @Binding var selectedComparisonTeamIDs: Set<Int>
@@ -418,10 +530,10 @@ private struct TeamDatabaseView: View {
         let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedSearch.isEmpty else {
-            return teams.sorted { $0.number < $1.number }
+            return season.teams.sorted { $0.number < $1.number }
         }
 
-        return teams.filter { team in
+        return season.teams.filter { team in
             team.name.localizedCaseInsensitiveContains(trimmedSearch)
                 || String(team.number).contains(trimmedSearch)
                 || team.region.localizedCaseInsensitiveContains(trimmedSearch)
@@ -430,7 +542,7 @@ private struct TeamDatabaseView: View {
     }
 
     private var selectedTeam: Team? {
-        teams.first { $0.id == selectedTeamID }
+        season.teams.first { $0.id == selectedTeamID }
     }
 
     var body: some View {
@@ -438,7 +550,7 @@ private struct TeamDatabaseView: View {
             PageContainer {
                 PageHeader(
                     title: "Teams",
-                    subtitle: "Search, edit, and prepare comparison lists.",
+                    subtitle: "Manage teams for \(season.displayName).",
                     symbolName: "person.3.sequence"
                 ) {
                     Button("Add Team", systemImage: "plus") {
@@ -454,7 +566,7 @@ private struct TeamDatabaseView: View {
                 LazyVGrid(columns: adaptiveColumns(minimum: 360), spacing: 16) {
                     SectionCard(title: "Team Database", subtitle: "\(filteredTeams.count) teams match your search.") {
                         if filteredTeams.isEmpty {
-                            EmptyStateView(symbolName: "magnifyingglass", title: "No teams found", message: "Try a different search or add a new team.")
+                            EmptyStateView(symbolName: "person.crop.circle.badge.plus", title: "No teams yet", message: "Add your first team to begin scouting this season.")
                         } else {
                             VStack(spacing: 0) {
                                 ForEach(filteredTeams) { team in
@@ -511,16 +623,16 @@ private struct TeamDatabaseView: View {
         }
 
         if let originalID = editingOriginalID,
-           let index = teams.firstIndex(where: { $0.id == originalID }) {
-            teams[index] = team
+           let index = season.teams.firstIndex(where: { $0.id == originalID }) {
+            season.teams[index] = team
             if selectedTeamID == originalID {
                 selectedTeamID = team.id
             }
-        } else if let existingIndex = teams.firstIndex(where: { $0.id == team.id }) {
-            teams[existingIndex] = team
+        } else if let existingIndex = season.teams.firstIndex(where: { $0.id == team.id }) {
+            season.teams[existingIndex] = team
             selectedTeamID = team.id
         } else {
-            teams.append(team)
+            season.teams.append(team)
             selectedTeamID = team.id
         }
 
@@ -528,18 +640,17 @@ private struct TeamDatabaseView: View {
     }
 
     private func delete(_ team: Team) {
-        teams.removeAll { $0.id == team.id }
+        season.teams.removeAll { $0.id == team.id }
         selectedComparisonTeamIDs.remove(team.id)
 
         if selectedTeamID == team.id {
-            selectedTeamID = teams.first?.id
+            selectedTeamID = season.teams.first?.id
         }
     }
 }
 
 private struct MatchNotesView: View {
-    let teams: [Team]
-    @Binding var notes: [MatchNote]
+    @Binding var season: Season
 
     @State private var isAddingNote = false
     @State private var draft = NoteDraft()
@@ -549,10 +660,10 @@ private struct MatchNotesView: View {
         let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedSearch.isEmpty else {
-            return notes
+            return season.matchNotes
         }
 
-        return notes.filter { note in
+        return season.matchNotes.filter { note in
             note.teamName.localizedCaseInsensitiveContains(trimmedSearch)
                 || String(note.teamNumber).contains(trimmedSearch)
                 || note.summary.localizedCaseInsensitiveContains(trimmedSearch)
@@ -565,11 +676,11 @@ private struct MatchNotesView: View {
             PageContainer {
                 PageHeader(
                     title: "Match Notes",
-                    subtitle: "Keep short observations easy to review.",
+                    subtitle: "Keep observations for \(season.displayName).",
                     symbolName: "note.text"
                 ) {
                     Button("Add Note", systemImage: "plus") {
-                        draft = NoteDraft(teamNumber: String(teams.first?.number ?? 731), event: "Qualifier", summary: "", score: 30)
+                        draft = NoteDraft(teamNumber: String(season.teams.first?.number ?? 0), event: "", summary: "", score: 0)
                         isAddingNote = true
                     }
                     .buttonStyle(.borderedProminent)
@@ -593,7 +704,7 @@ private struct MatchNotesView: View {
         .background(AppTheme.background)
         .sheet(isPresented: $isAddingNote) {
             NoteEditorSheet(
-                teams: teams,
+                teams: season.teams,
                 draft: $draft,
                 onCancel: { isAddingNote = false },
                 onSave: saveNote
@@ -606,12 +717,12 @@ private struct MatchNotesView: View {
             return
         }
 
-        let teamName = teams.first { $0.number == teamNumber }?.name ?? "Team \(teamNumber)"
-        notes.insert(
+        let teamName = season.teams.first { $0.number == teamNumber }?.name ?? "Team \(teamNumber)"
+        season.matchNotes.insert(
             MatchNote(
                 teamNumber: teamNumber,
                 teamName: teamName,
-                event: draft.event.trimmingCharacters(in: .whitespacesAndNewlines),
+                event: draft.event.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unspecified match" : draft.event,
                 summary: draft.summary.trimmingCharacters(in: .whitespacesAndNewlines),
                 score: Int(draft.score),
                 date: .now
@@ -622,16 +733,16 @@ private struct MatchNotesView: View {
     }
 
     private func delete(_ note: MatchNote) {
-        notes.removeAll { $0.id == note.id }
+        season.matchNotes.removeAll { $0.id == note.id }
     }
 }
 
 private struct CompareTeamsView: View {
-    let teams: [Team]
+    let season: Season
     @Binding var selectedTeamIDs: Set<Int>
 
     private var selectedTeams: [Team] {
-        teams
+        season.teams
             .filter { selectedTeamIDs.contains($0.id) }
             .sorted { $0.overallScore > $1.overallScore }
     }
@@ -641,21 +752,25 @@ private struct CompareTeamsView: View {
             PageContainer {
                 PageHeader(
                     title: "Compare Teams",
-                    subtitle: "Build a short list and compare strengths side by side.",
+                    subtitle: "Build an alliance short list for \(season.displayName).",
                     symbolName: "arrow.left.arrow.right"
                 )
 
                 SectionCard(title: "Selected Teams", subtitle: "Choose up to five teams for alliance planning.") {
-                    FlowLayout(spacing: 8) {
-                        ForEach(teams.sorted { $0.number < $1.number }) { team in
-                            Button {
-                                toggle(team.id)
-                            } label: {
-                                Label("\(team.number)", systemImage: selectedTeamIDs.contains(team.id) ? "checkmark.circle.fill" : "plus.circle")
+                    if season.teams.isEmpty {
+                        EmptyStateView(symbolName: "person.3.sequence", title: "No teams to compare", message: "Add teams first, then return here to compare them.")
+                    } else {
+                        FlowLayout(spacing: 8) {
+                            ForEach(season.teams.sorted { $0.number < $1.number }) { team in
+                                Button {
+                                    toggle(team.id)
+                                } label: {
+                                    Label("\(team.number)", systemImage: selectedTeamIDs.contains(team.id) ? "checkmark.circle.fill" : "plus.circle")
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(selectedTeamIDs.contains(team.id) ? .blue : .secondary)
+                                .disabled(!selectedTeamIDs.contains(team.id) && selectedTeamIDs.count >= 5)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(selectedTeamIDs.contains(team.id) ? .blue : .secondary)
-                            .disabled(!selectedTeamIDs.contains(team.id) && selectedTeamIDs.count >= 5)
                         }
                     }
                 }
@@ -702,27 +817,58 @@ private struct CompareTeamsView: View {
 }
 
 private struct AssistantView: View {
-    let teams: [Team]
-    let notes: [MatchNote]
+    let season: Season
 
+    @AppStorage("openAIAPIKey") private var apiKey = ""
+    @AppStorage("openAIModel") private var model = "gpt-6-astra"
     @State private var prompt = ""
     @State private var messages: [ChatMessage] = [
-        ChatMessage(role: .assistant, text: "Ask me for the best overall team, strongest auto robot, best tele-op scorer, or a quick match-note summary.")
+        ChatMessage(role: .assistant, text: "Add your OpenAI API key, then ask me to rank teams, summarize notes, or suggest alliance strategy from this season's data.")
     ]
+    @State private var isSending = false
+    @State private var errorMessage: String?
+
+    private var apiKeyIsReady: Bool {
+        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 PageContainer {
                     PageHeader(
-                        title: "Scouting Assistant",
-                        subtitle: "Quick answers from the data already in the app.",
+                        title: "AI Assistant",
+                        subtitle: "Uses OpenAI to reason over \(season.displayName).",
                         symbolName: "sparkles"
                     )
+
+                    SectionCard(title: "OpenAI Connection", subtitle: "Your key stays on this device in app storage.") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SecureField("OpenAI API Key", text: $apiKey)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Model", text: $model)
+                                .textFieldStyle(.roundedBorder)
+                            Text("Default model follows the current OpenAI quickstart example. For a team app, move API calls to a backend before distributing widely.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     VStack(spacing: 14) {
                         ForEach(messages) { message in
                             ChatBubble(message: message)
+                        }
+
+                        if isSending {
+                            ProgressView("Thinking...")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
@@ -737,7 +883,7 @@ private struct AssistantView: View {
 
                 Button("Send", systemImage: "paperplane.fill", action: send)
                     .buttonStyle(.borderedProminent)
-                    .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!apiKeyIsReady || isSending || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding()
             .background(.regularMaterial)
@@ -747,40 +893,156 @@ private struct AssistantView: View {
 
     private func send() {
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanPrompt.isEmpty else {
+        guard !cleanPrompt.isEmpty, apiKeyIsReady, !isSending else {
             return
         }
 
         messages.append(ChatMessage(role: .user, text: cleanPrompt))
-        messages.append(ChatMessage(role: .assistant, text: response(for: cleanPrompt)))
         prompt = ""
+        errorMessage = nil
+        isSending = true
+
+        Task {
+            do {
+                let response = try await OpenAIResponsesClient().send(
+                    prompt: cleanPrompt,
+                    season: season,
+                    model: model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "gpt-6-astra" : model,
+                    apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                await MainActor.run {
+                    messages.append(ChatMessage(role: .assistant, text: response))
+                    isSending = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isSending = false
+                }
+            }
+        }
+    }
+}
+
+private struct OpenAIResponsesClient {
+    func send(prompt: String, season: Season, model: String, apiKey: String) async throws -> String {
+        guard let url = URL(string: "https://api.openai.com/v1/responses") else {
+            throw AssistantError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            OpenAIResponseRequest(
+                model: model,
+                input: buildInput(prompt: prompt, season: season)
+            )
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AssistantError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "No response body"
+            throw AssistantError.apiError("OpenAI request failed (\(httpResponse.statusCode)): \(body)")
+        }
+
+        let decoded = try JSONDecoder().decode(OpenAIResponseEnvelope.self, from: data)
+        guard let text = decoded.bestText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AssistantError.emptyResponse
+        }
+
+        return text
     }
 
-    private func response(for prompt: String) -> String {
-        let lowercased = prompt.lowercased()
+    private func buildInput(prompt: String, season: Season) -> String {
+        let teams = season.teams.isEmpty
+            ? "No teams have been scouted yet."
+            : season.teams.map { team in
+                "Team \(team.number) \(team.name): region \(team.region), drive train \(team.driveTrain), auto \(team.autoScore), tele-op \(team.teleOpScore), endgame \(team.endgameScore), overall \(team.overallScore), notes: \(team.notes.isEmpty ? "none" : team.notes)"
+            }.joined(separator: "\n")
 
-        if lowercased.contains("auto"), let team = teams.max(by: { $0.autoScore < $1.autoScore }) {
-            return "For autonomous, start with \(team.number) \(team.name). They have the strongest auto score at \(team.autoScore)."
+        let notes = season.matchNotes.isEmpty
+            ? "No match notes have been recorded yet."
+            : season.matchNotes.map { note in
+                "\(note.event), team \(note.teamNumber) \(note.teamName), score \(note.score): \(note.summary)"
+            }.joined(separator: "\n")
+
+        return """
+        You are Circuit Scout, an FTC robotics scouting assistant. Be concise, practical, and honest when data is missing. Use only the scouting data below unless the user asks for general strategy advice.
+
+        Season: \(season.displayName)
+        Game: \(season.gameName.isEmpty ? "Unspecified" : season.gameName)
+        Year: \(season.year.isEmpty ? "Unspecified" : season.year)
+
+        Teams:
+        \(teams)
+
+        Match notes:
+        \(notes)
+
+        User question:
+        \(prompt)
+        """
+    }
+}
+
+private struct OpenAIResponseRequest: Encodable {
+    let model: String
+    let input: String
+}
+
+private struct OpenAIResponseEnvelope: Decodable {
+    let outputText: String?
+    let output: [OpenAIOutputItem]?
+
+    enum CodingKeys: String, CodingKey {
+        case outputText = "output_text"
+        case output
+    }
+
+    var bestText: String? {
+        if let outputText {
+            return outputText
         }
 
-        if lowercased.contains("tele") || lowercased.contains("cycle"), let team = teams.max(by: { $0.teleOpScore < $1.teleOpScore }) {
-            return "For tele-op scoring, \(team.number) \(team.name) is the best current signal with a tele-op score of \(team.teleOpScore)."
-        }
+        return output?
+            .flatMap { $0.content ?? [] }
+            .compactMap { $0.text }
+            .joined(separator: "\n")
+    }
+}
 
-        if lowercased.contains("end") || lowercased.contains("park"), let team = teams.max(by: { $0.endgameScore < $1.endgameScore }) {
-            return "For endgame, \(team.number) \(team.name) looks strongest with an endgame score of \(team.endgameScore)."
-        }
+private struct OpenAIOutputItem: Decodable {
+    let content: [OpenAIContentItem]?
+}
 
-        if lowercased.contains("note") || lowercased.contains("summary") {
-            let latest = notes.prefix(3).map { "\($0.teamNumber): \($0.summary)" }.joined(separator: "\n")
-            return latest.isEmpty ? "No match notes have been added yet." : latest
-        }
+private struct OpenAIContentItem: Decodable {
+    let text: String?
+}
 
-        if let team = teams.max(by: { $0.overallScore < $1.overallScore }) {
-            return "Best overall right now is \(team.number) \(team.name) with \(team.overallScore) total points. Their key note: \(team.notes.isEmpty ? "add more scouting notes next match." : team.notes)"
-        }
+private enum AssistantError: LocalizedError {
+    case invalidURL
+    case invalidResponse
+    case emptyResponse
+    case apiError(String)
 
-        return "Add teams and match notes first, then I can help rank and compare them."
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            "The OpenAI URL is invalid."
+        case .invalidResponse:
+            "OpenAI returned an invalid response."
+        case .emptyResponse:
+            "OpenAI returned an empty answer."
+        case .apiError(let message):
+            message
+        }
     }
 }
 
@@ -891,7 +1153,7 @@ private struct HeroCard: View {
                     .foregroundStyle(.secondary)
                 Text(team.name)
                     .font(.title2.bold())
-                Text(team.notes)
+                Text(team.notes.isEmpty ? "No notes yet." : team.notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -1169,9 +1431,13 @@ private struct NoteEditorSheet: View {
         NavigationStack {
             Form {
                 Section("Match") {
-                    Picker("Team", selection: $draft.teamNumber) {
-                        ForEach(teams.sorted { $0.number < $1.number }) { team in
-                            Text("\(team.number) - \(team.name)").tag(String(team.number))
+                    if teams.isEmpty {
+                        TextField("Team Number", text: $draft.teamNumber)
+                    } else {
+                        Picker("Team", selection: $draft.teamNumber) {
+                            ForEach(teams.sorted { $0.number < $1.number }) { team in
+                                Text("\(team.number) - \(team.name)").tag(String(team.number))
+                            }
                         }
                     }
                     TextField("Event", text: $draft.event)
