@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var selectedTeamID: Int?
     @State private var selectedComparisonTeamIDs: Set<Int> = []
+    @State private var syncStatusMessage = "Automatic sync"
 
     var body: some View {
         NavigationSplitView {
@@ -16,7 +17,8 @@ struct ContentView: View {
                 seasons: $seasons,
                 activeSeasonID: activeSeasonIDBinding,
                 onNewSeason: createSeason,
-                onDeleteSeason: deleteActiveSeason
+                onDeleteSeason: deleteActiveSeason,
+                syncStatusMessage: syncStatusMessage
             )
         } detail: {
             content
@@ -93,6 +95,7 @@ struct ContentView: View {
         selectedTeamID = nil
         selectedComparisonTeamIDs = []
         searchText = ""
+        syncSeasonToBase44(newSeason)
     }
 
     private func deleteActiveSeason() {
@@ -104,6 +107,21 @@ struct ContentView: View {
         self.activeSeasonID = seasons.first?.id
         selectedTeamID = nil
         selectedComparisonTeamIDs = []
+    }
+
+    private func syncSeasonToBase44(_ season: Season) {
+        Task {
+            do {
+                try await Base44SyncClient().pushSeasonSnapshot(season)
+                await MainActor.run {
+                    syncStatusMessage = "Synced \(season.displayName)"
+                }
+            } catch {
+                await MainActor.run {
+                    syncStatusMessage = error.localizedDescription
+                }
+            }
+        }
     }
 }
 
@@ -287,6 +305,7 @@ private struct SidebarView: View {
     @Binding var activeSeasonID: UUID?
     let onNewSeason: () -> Void
     let onDeleteSeason: () -> Void
+    let syncStatusMessage: String
 
     @State private var isManagingSeason = false
 
@@ -320,7 +339,8 @@ private struct SidebarView: View {
                 activeSeason: activeSeason,
                 onManage: { isManagingSeason = true },
                 onNewSeason: onNewSeason,
-                onDeleteSeason: onDeleteSeason
+                onDeleteSeason: onDeleteSeason,
+                syncStatusMessage: syncStatusMessage
             )
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -353,6 +373,7 @@ private struct SeasonSummaryCard: View {
     let onManage: () -> Void
     let onNewSeason: () -> Void
     let onDeleteSeason: () -> Void
+    let syncStatusMessage: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -388,6 +409,12 @@ private struct SeasonSummaryCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
+
+            Label(syncStatusMessage, systemImage: syncStatusMessage.localizedCaseInsensitiveContains("synced") ? "checkmark.icloud.fill" : "icloud.slash")
+                .font(.caption2)
+                .foregroundStyle(syncStatusMessage.localizedCaseInsensitiveContains("synced") ? .green : .secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             Picker("Season", selection: $activeSeasonID) {
                 ForEach(seasons) { season in
@@ -681,6 +708,19 @@ private struct ScoutInputView: View {
         )
 
         didSave = true
+        syncScoutingData(team: team, note: season.matchNotes[0])
+    }
+
+    private func syncScoutingData(team: Team, note: MatchNote) {
+        Task {
+            do {
+                try await Base44SyncClient().pushSeasonSnapshot(season)
+                try await Base44SyncClient().pushTeam(team, seasonID: season.id)
+                try await Base44SyncClient().pushMatchNote(note, seasonID: season.id)
+            } catch {
+                print("Base44 sync failed: \(error.localizedDescription)")
+            }
+        }
     }
 }
 
@@ -805,6 +845,18 @@ private struct TeamDatabaseView: View {
         }
 
         isPresentingTeamEditor = false
+        syncTeamToBase44(team)
+    }
+
+    private func syncTeamToBase44(_ team: Team) {
+        Task {
+            do {
+                try await Base44SyncClient().pushSeasonSnapshot(season)
+                try await Base44SyncClient().pushTeam(team, seasonID: season.id)
+            } catch {
+                print("Base44 sync failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func delete(_ team: Team) {
@@ -886,18 +938,28 @@ private struct MatchNotesView: View {
         }
 
         let teamName = season.teams.first { $0.number == teamNumber }?.name ?? "Team \(teamNumber)"
-        season.matchNotes.insert(
-            MatchNote(
-                teamNumber: teamNumber,
-                teamName: teamName,
-                event: draft.event.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unspecified match" : draft.event,
-                summary: draft.summary.trimmingCharacters(in: .whitespacesAndNewlines),
-                score: Int(draft.score),
-                date: .now
-            ),
-            at: 0
+        let note = MatchNote(
+            teamNumber: teamNumber,
+            teamName: teamName,
+            event: draft.event.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unspecified match" : draft.event,
+            summary: draft.summary.trimmingCharacters(in: .whitespacesAndNewlines),
+            score: Int(draft.score),
+            date: .now
         )
+        season.matchNotes.insert(note, at: 0)
         isAddingNote = false
+        syncNoteToBase44(note)
+    }
+
+    private func syncNoteToBase44(_ note: MatchNote) {
+        Task {
+            do {
+                try await Base44SyncClient().pushSeasonSnapshot(season)
+                try await Base44SyncClient().pushMatchNote(note, seasonID: season.id)
+            } catch {
+                print("Base44 sync failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func delete(_ note: MatchNote) {
@@ -1211,6 +1273,155 @@ private enum AssistantError: LocalizedError {
         case .apiError(let message):
             message
         }
+    }
+}
+
+private struct Base44SyncClient {
+    // Add the Base44 backend function URL here once your site endpoint is ready.
+    private static let baseURL = ""
+    private static let apiToken = ""
+
+    func pushSeasonSnapshot(_ season: Season) async throws {
+        try await post(SeasonSyncPayload(season: season), path: "seasons")
+    }
+
+    func pushTeam(_ team: Team, seasonID: UUID) async throws {
+        try await post(TeamSyncPayload(team: team, seasonID: seasonID), path: "teams")
+    }
+
+    func pushMatchNote(_ note: MatchNote, seasonID: UUID) async throws {
+        try await post(MatchNoteSyncPayload(note: note, seasonID: seasonID), path: "match-notes")
+    }
+
+    private func post<Payload: Encodable>(_ payload: Payload, path: String) async throws {
+        let trimmedBaseURL = Self.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBaseURL.isEmpty else {
+            return
+        }
+
+        guard let url = URL(string: trimmedBaseURL)?.appendingPathComponent(path) else {
+            throw Base44SyncError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let trimmedToken = Self.apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedToken.isEmpty {
+            request.setValue("Bearer \(trimmedToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        request.httpBody = try JSONEncoder.base44.encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw Base44SyncError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "No response body"
+            throw Base44SyncError.serverError("Base44 sync failed (\(httpResponse.statusCode)): \(body)")
+        }
+    }
+}
+
+private struct SeasonSyncPayload: Encodable {
+    let id: UUID
+    let name: String
+    let gameName: String
+    let year: String
+    let teamCount: Int
+    let noteCount: Int
+    let updatedAt: Date
+
+    init(season: Season) {
+        id = season.id
+        name = season.displayName
+        gameName = season.gameName
+        year = season.year
+        teamCount = season.teams.count
+        noteCount = season.matchNotes.count
+        updatedAt = .now
+    }
+}
+
+private struct TeamSyncPayload: Encodable {
+    let seasonID: UUID
+    let number: Int
+    let name: String
+    let region: String
+    let driveTrain: String
+    let autoScore: Int
+    let teleOpScore: Int
+    let endgameScore: Int
+    let overallScore: Int
+    let lastSeen: String
+    let notes: String
+    let updatedAt: Date
+
+    init(team: Team, seasonID: UUID) {
+        self.seasonID = seasonID
+        number = team.number
+        name = team.name
+        region = team.region
+        driveTrain = team.driveTrain
+        autoScore = team.autoScore
+        teleOpScore = team.teleOpScore
+        endgameScore = team.endgameScore
+        overallScore = team.overallScore
+        lastSeen = team.lastSeen
+        notes = team.notes
+        updatedAt = .now
+    }
+}
+
+private struct MatchNoteSyncPayload: Encodable {
+    let id: UUID
+    let seasonID: UUID
+    let teamNumber: Int
+    let teamName: String
+    let event: String
+    let summary: String
+    let score: Int
+    let date: Date
+    let updatedAt: Date
+
+    init(note: MatchNote, seasonID: UUID) {
+        id = note.id
+        self.seasonID = seasonID
+        teamNumber = note.teamNumber
+        teamName = note.teamName
+        event = note.event
+        summary = note.summary
+        score = note.score
+        date = note.date
+        updatedAt = .now
+    }
+}
+
+private enum Base44SyncError: LocalizedError {
+    case invalidURL
+    case invalidResponse
+    case serverError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            "The Base44 sync URL is invalid."
+        case .invalidResponse:
+            "Base44 returned an invalid response."
+        case .serverError(let message):
+            message
+        }
+    }
+}
+
+private extension JSONEncoder {
+    static var base44: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
     }
 }
 
