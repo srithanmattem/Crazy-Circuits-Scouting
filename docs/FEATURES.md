@@ -72,6 +72,7 @@ Implemented:
 - No-login, no-key chat interface
 - Current-season context packaging
 - Base44 assistant request
+- On-device AI fallback on supported devices
 - Local data-based fallback while the backend is not connected
 - Chat-style question and answer flow
 

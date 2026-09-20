@@ -11,7 +11,7 @@ Circuit Scout is a SwiftUI scouting app for FTC teams. It gives drive teams and 
 - Match notes with quick add and delete flows
 - Team comparison view with category score bars and strategy insights
 - Season picker with blank new seasons
-- AI scouting assistant designed to run through a team Base44 backend, with no API keys on scout devices
+- AI scouting assistant designed to run through a team Base44 backend, with on-device AI fallback where supported and no API keys on scout devices
 - Automatic Base44 sync foundation for seasons, teams, and match notes
 - Responsive SwiftUI layout for Mac and iPad-style window sizes
 
@@ -46,7 +46,7 @@ The app starts with a blank season and stores data in memory while it is running
 
 ## AI Assistant
 
-The AI Assistant does not ask scouts for API keys. It is wired to call a Base44 backend assistant endpoint, so the website can safely own the AI provider key. Until that endpoint is connected, the app returns a local data-based scouting summary instead of failing.
+The AI Assistant does not ask scouts for API keys. It is wired to call a Base44 backend assistant endpoint, so the website can safely own the AI provider key. If the backend is not connected, the app tries Apple on-device AI on supported devices, then falls back to a local data-based scouting summary instead of failing.
 
 ## Documentation
 

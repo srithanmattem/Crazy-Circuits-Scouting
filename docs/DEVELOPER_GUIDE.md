@@ -20,6 +20,7 @@ Current core types:
 | `NoteDraft` | Editable note form state |
 | `Base44SyncClient` | Automatic sync and assistant backend client |
 | `ScoutingAIClient` | Assistant coordinator with Base44-first behavior |
+| `OnDeviceScoutingAI` | Optional Foundation Models fallback for supported devices |
 
 The UI is split into small SwiftUI views:
 
@@ -73,7 +74,7 @@ Configured paths:
 - `POST /match-notes`
 - `POST /assistant`
 
-The `baseURL` constant is intentionally blank until the Base44 endpoint is ready. With a blank URL, sync calls skip quietly and the assistant uses a local data-based response.
+The `baseURL` constant is intentionally blank until the Base44 endpoint is ready. With a blank URL, sync calls skip quietly and the assistant tries Apple on-device AI before using a local data-based response.
 
 ## Suggested Next Model Layer
 
@@ -122,6 +123,6 @@ Before publishing changes:
 
 - Data is not persisted after app restart.
 - The Base44 backend URL still needs to be connected.
-- The assistant uses a local fallback until the Base44 assistant endpoint is configured.
+- The assistant uses on-device AI only on supported devices and otherwise uses a local fallback until the Base44 assistant endpoint is configured.
 - There are no automated tests yet.
 - The project currently keeps all UI in one Swift file for simplicity.

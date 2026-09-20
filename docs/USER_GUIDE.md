@@ -125,7 +125,7 @@ Try asking:
 - `Endgame or parking recommendation?`
 - `Summarize notes`
 
-When the Base44 assistant endpoint is connected, the app sends the active season's scouting context to the team backend and shows the answer. Until then, it provides a local scouting summary from the data already on the device.
+When the Base44 assistant endpoint is connected, the app sends the active season's scouting context to the team backend and shows the answer. If the backend is not connected, the app tries on-device AI on supported Apple Intelligence devices, then provides a local scouting summary from the data already on the device.
 
 ## Data Persistence
 

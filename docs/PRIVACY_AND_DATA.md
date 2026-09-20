@@ -26,7 +26,7 @@ The app is prepared to send seasons, teams, match notes, and assistant questions
 
 The AI Assistant does not ask users for API keys and does not store an AI key in the app. It sends the active season name, game/year fields, teams, match notes, and the user's question to a Base44 assistant endpoint when connected. The website backend should own any private AI provider key.
 
-If the assistant endpoint is not configured, the app returns a local data-based scouting summary instead.
+If the assistant endpoint is not configured, the app tries Apple on-device AI on supported devices. If that is unavailable, it returns a local data-based scouting summary instead.
 
 ## Production Considerations
 

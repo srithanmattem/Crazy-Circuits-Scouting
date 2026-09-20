@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 struct ContentView: View {
     @State private var selectedSection: AppSection? = .dashboard
@@ -1140,10 +1143,73 @@ private struct ScoutingAIClient {
         do {
             return try await Base44SyncClient().askAssistant(prompt: prompt, season: season)
         } catch Base44SyncError.notConfigured {
+            #if canImport(FoundationModels)
+            if let onDeviceAnswer = try? await OnDeviceScoutingAI().answer(prompt: prompt, season: season) {
+                return onDeviceAnswer
+            }
+            #endif
             return LocalScoutingAssistant().answer(prompt: prompt, season: season)
         }
     }
 }
+
+#if canImport(FoundationModels)
+private struct OnDeviceScoutingAI {
+    @MainActor
+    func answer(prompt: String, season: Season) async throws -> String {
+        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+            let model = SystemLanguageModel.default
+            guard model.isAvailable else {
+                throw Base44SyncError.notConfigured
+            }
+
+            let session = LanguageModelSession(
+                instructions: "You are Circuit Scout, an FTC robotics scouting assistant. Be concise, practical, and honest when data is missing. Use only the scouting data provided unless the user asks for general strategy advice."
+            )
+            let response = try await session.respond(to: context(prompt: prompt, season: season))
+            let text = String(describing: response.content).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !text.isEmpty else {
+                throw Base44SyncError.emptyResponse
+            }
+
+            return text
+        } else {
+            throw Base44SyncError.notConfigured
+        }
+    }
+
+    @MainActor
+    private func context(prompt: String, season: Season) -> String {
+        let teams = season.teams.isEmpty
+            ? "No teams have been scouted yet."
+            : season.teams.map { team in
+                "Team \(team.number) \(team.name): region \(team.region), drive train \(team.driveTrain), auto \(team.autoScore), tele-op \(team.teleOpScore), endgame \(team.endgameScore), overall \(team.overallScore), notes: \(team.notes.isEmpty ? "none" : team.notes)"
+            }.joined(separator: "\n")
+
+        let notes = season.matchNotes.isEmpty
+            ? "No match notes have been recorded yet."
+            : season.matchNotes.map { note in
+                "\(note.event), team \(note.teamNumber) \(note.teamName), score \(note.score): \(note.summary)"
+            }.joined(separator: "\n")
+
+        return """
+        Season: \(season.displayName)
+        Game: \(season.gameName.isEmpty ? "Unspecified" : season.gameName)
+        Year: \(season.year.isEmpty ? "Unspecified" : season.year)
+
+        Teams:
+        \(teams)
+
+        Match notes:
+        \(notes)
+
+        User question:
+        \(prompt)
+        """
+    }
+}
+#endif
 
 private struct LocalScoutingAssistant {
     func answer(prompt: String, season: Season) -> String {
