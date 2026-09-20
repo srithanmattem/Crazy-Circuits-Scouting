@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var selectedTeamID: Int?
     @State private var selectedComparisonTeamIDs: Set<Int> = []
     @State private var syncStatusMessage = "Automatic sync"
+    @State private var hasLoadedPersistedData = false
 
     var body: some View {
         NavigationSplitView {
@@ -28,9 +29,13 @@ struct ContentView: View {
                 .navigationTitle(selectedSection?.title ?? "Circuit Scout")
         }
         .onAppear {
-            if activeSeasonID == nil {
-                activeSeasonID = seasons.first?.id
-            }
+            loadPersistedDataIfNeeded()
+        }
+        .onChange(of: seasons) { _, _ in
+            savePersistedData()
+        }
+        .onChange(of: activeSeasonID) { _, _ in
+            savePersistedData()
         }
     }
 
@@ -126,6 +131,36 @@ struct ContentView: View {
             }
         }
     }
+
+    private func loadPersistedDataIfNeeded() {
+        guard !hasLoadedPersistedData else {
+            return
+        }
+
+        if let savedState = ScoutingPersistenceStore.load() {
+            seasons = savedState.seasons.isEmpty ? [Season.blank()] : savedState.seasons
+            activeSeasonID = savedState.activeSeasonID.flatMap { savedID in
+                seasons.contains { $0.id == savedID } ? savedID : nil
+            } ?? seasons.first?.id
+        } else if activeSeasonID == nil {
+            activeSeasonID = seasons.first?.id
+        }
+
+        hasLoadedPersistedData = true
+    }
+
+    private func savePersistedData() {
+        guard hasLoadedPersistedData else {
+            return
+        }
+
+        ScoutingPersistenceStore.save(
+            SavedScoutingState(
+                seasons: seasons.isEmpty ? [Season.blank()] : seasons,
+                activeSeasonID: activeSeasonID
+            )
+        )
+    }
 }
 
 private enum AppSection: String, CaseIterable, Identifiable {
@@ -170,7 +205,7 @@ private enum ScoutingTab: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
-private struct Season: Identifiable, Hashable {
+private struct Season: Identifiable, Hashable, Codable {
     let id: UUID
     var name: String
     var gameName: String
@@ -203,7 +238,7 @@ private struct Season: Identifiable, Hashable {
     }
 }
 
-private struct Team: Identifiable, Hashable {
+private struct Team: Identifiable, Hashable, Codable {
     var id: Int { number }
 
     var number: Int
@@ -221,7 +256,7 @@ private struct Team: Identifiable, Hashable {
     }
 }
 
-private struct MatchNote: Identifiable, Hashable {
+private struct MatchNote: Identifiable, Hashable, Codable {
     let id: UUID
     var teamNumber: Int
     var teamName: String
@@ -238,6 +273,59 @@ private struct MatchNote: Identifiable, Hashable {
         self.summary = summary
         self.score = score
         self.date = date
+    }
+}
+
+private struct SavedScoutingState: Codable {
+    var seasons: [Season]
+    var activeSeasonID: UUID?
+}
+
+private enum ScoutingPersistenceStore {
+    private static let fileName = "circuit-scout-state.json"
+
+    static func load() -> SavedScoutingState? {
+        do {
+            let data = try Data(contentsOf: fileURL)
+            return try decoder.decode(SavedScoutingState.self, from: data)
+        } catch {
+            return nil
+        }
+    }
+
+    static func save(_ state: SavedScoutingState) {
+        do {
+            let data = try encoder.encode(state)
+            try data.write(to: fileURL, options: [.atomic])
+        } catch {
+            print("Could not save scouting data: \(error.localizedDescription)")
+        }
+    }
+
+    private static var fileURL: URL {
+        get throws {
+            let directory = try FileManager.default.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+
+            return directory.appendingPathComponent(fileName)
+        }
+    }
+
+    private static var encoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
+    }
+
+    private static var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 }
 

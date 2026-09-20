@@ -129,4 +129,4 @@ When the Base44 assistant endpoint is connected, the app sends the active season
 
 ## Data Persistence
 
-This version stores data in memory while the app is open. If you close and relaunch the app, it returns to a blank season. Add persistent storage before using it as a production scouting record.
+The app saves seasons, teams, match notes, and the active season locally on the device. If you close and relaunch the app, your scouting data loads automatically.

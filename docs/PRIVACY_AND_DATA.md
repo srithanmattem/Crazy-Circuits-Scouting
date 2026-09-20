@@ -1,6 +1,6 @@
 # Privacy and Data Notes
 
-Circuit Scout currently stores all data in memory while the app is running.
+Circuit Scout stores scouting data locally on the device and keeps it after the app closes.
 
 ## What Data Is Used
 
@@ -16,7 +16,7 @@ The app works with scouting data such as:
 
 ## Where Data Is Stored
 
-In this version, data is stored in app memory while the app is running. The app also includes a Base44 sync client so the same data can be uploaded to the team website once the backend endpoint is configured.
+In this version, data is stored in a JSON file in the app's Documents folder. The app also includes a Base44 sync client so the same data can be uploaded to the team website once the backend endpoint is configured.
 
 ## Network Usage
 
@@ -32,7 +32,6 @@ If the assistant endpoint is not configured, the app tries Apple on-device AI on
 
 Before using this for real team operations, consider adding:
 
-- Persistent local storage
 - Import/export
 - Team data backup
 - Permission controls for shared devices

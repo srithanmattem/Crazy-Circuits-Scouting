@@ -18,6 +18,8 @@ Current core types:
 | `MatchNote` | Match observation model |
 | `TeamDraft` | Editable team form state |
 | `NoteDraft` | Editable note form state |
+| `SavedScoutingState` | Codable persisted app state |
+| `ScoutingPersistenceStore` | Loads and saves local JSON state |
 | `Base44SyncClient` | Automatic sync and assistant backend client |
 | `ScoutingAIClient` | Assistant coordinator with Base44-first behavior |
 | `OnDeviceScoutingAI` | Optional Foundation Models fallback for supported devices |
@@ -50,9 +52,11 @@ Child views receive bindings when they need to mutate data:
 - `MatchNotesView` adds and deletes notes inside the active season
 - `CompareTeamsView` edits the comparison selection for the active season
 
-## Adding Persistence
+## Local Persistence
 
-The current app uses in-memory data. Good next options:
+The app saves `SavedScoutingState` to `circuit-scout-state.json` in the app's Documents folder. It reloads that file when `ContentView` appears, then saves whenever seasons or the active season changes.
+
+Good future storage options:
 
 | Option | When To Use |
 | --- | --- |
@@ -61,7 +65,7 @@ The current app uses in-memory data. Good next options:
 | Document-based storage | Best for sharing scouting files between devices |
 | Cloud backend | Best for multi-device team syncing |
 
-When adding persistence, keep `ContentView` as the navigation owner and move data operations into a model or store type.
+When expanding persistence, keep `ContentView` as the navigation owner and move heavier data operations into a model or store type.
 
 ## Base44 Sync
 
@@ -121,7 +125,6 @@ Before publishing changes:
 
 ## Known Limitations
 
-- Data is not persisted after app restart.
 - The Base44 backend URL still needs to be connected.
 - The assistant uses on-device AI only on supported devices and otherwise uses a local fallback until the Base44 assistant endpoint is configured.
 - There are no automated tests yet.

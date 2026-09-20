@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added local JSON persistence so scouting data reloads after the app closes.
 - Removed sample teams and notes; the app now starts with a blank season.
 - Added season creation, switching, renaming, and deletion.
 - Replaced the visible OpenAI key setup with a Base44-first assistant flow and local fallback.

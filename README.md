@@ -42,7 +42,7 @@ Circuit Scout is a SwiftUI scouting app for FTC teams. It gives drive teams and 
 
 ## Current Data Model
 
-The app starts with a blank season and stores data in memory while it is running. Changes made while the app is open are reflected across the UI. The code also includes a Base44 sync client so seasons, teams, and match notes can automatically sync to the existing website once the backend endpoint is added.
+The app starts with a blank season the first time it opens, then saves seasons, teams, match notes, and the active season locally on the device. Closing and reopening the app reloads the saved scouting data. The code also includes a Base44 sync client so seasons, teams, and match notes can automatically sync to the existing website once the backend endpoint is added.
 
 ## AI Assistant
 
