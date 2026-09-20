@@ -288,6 +288,20 @@ private struct SidebarView: View {
     let onNewSeason: () -> Void
     let onDeleteSeason: () -> Void
 
+    @State private var isManagingSeason = false
+
+    private var activeSeason: Season? {
+        seasons.first { $0.id == activeSeasonID }
+    }
+
+    private var activeSeasonBinding: Binding<Season>? {
+        guard let index = seasons.firstIndex(where: { $0.id == activeSeasonID }) else {
+            return nil
+        }
+
+        return $seasons[index]
+    }
+
     var body: some View {
         List(selection: $selection) {
             Section("Navigate") {
@@ -300,35 +314,189 @@ private struct SidebarView: View {
         }
         .navigationTitle("Circuit Scout")
         .safeAreaInset(edge: .bottom) {
-            VStack(alignment: .leading, spacing: 12) {
-                Picker("Season", selection: $activeSeasonID) {
-                    ForEach(seasons) { season in
-                        Text(season.displayName).tag(Optional(season.id))
-                    }
-                }
-                .pickerStyle(.menu)
-
-                if let index = seasons.firstIndex(where: { $0.id == activeSeasonID }) {
-                    TextField("Season name", text: $seasons[index].name)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Game name", text: $seasons[index].gameName)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Year", text: $seasons[index].year)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                HStack {
-                    Button("New", systemImage: "plus", action: onNewSeason)
-                    Spacer()
-                    Button("Delete", systemImage: "trash", action: onDeleteSeason)
-                        .disabled(seasons.count <= 1)
-                        .tint(.red)
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding()
+            SeasonSummaryCard(
+                seasons: seasons,
+                activeSeasonID: $activeSeasonID,
+                activeSeason: activeSeason,
+                onManage: { isManagingSeason = true },
+                onNewSeason: onNewSeason,
+                onDeleteSeason: onDeleteSeason
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(.thinMaterial)
         }
+        .sheet(isPresented: $isManagingSeason) {
+            if let activeSeasonBinding {
+                SeasonManagerSheet(
+                    season: activeSeasonBinding,
+                    seasons: seasons,
+                    activeSeasonID: $activeSeasonID,
+                    canDelete: seasons.count > 1,
+                    onNewSeason: onNewSeason,
+                    onDeleteSeason: {
+                        onDeleteSeason()
+                        if seasons.count <= 2 {
+                            isManagingSeason = false
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+private struct SeasonSummaryCard: View {
+    let seasons: [Season]
+    @Binding var activeSeasonID: UUID?
+    let activeSeason: Season?
+    let onManage: () -> Void
+    let onNewSeason: () -> Void
+    let onDeleteSeason: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(.blue.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Active Season")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(activeSeason?.displayName ?? "No Season")
+                        .font(.headline)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+
+                Spacer(minLength: 8)
+            }
+
+            if let activeSeason {
+                HStack(spacing: 8) {
+                    SeasonStatPill(value: "\(activeSeason.teams.count)", label: "Teams", tint: .blue)
+                    SeasonStatPill(value: "\(activeSeason.matchNotes.count)", label: "Notes", tint: .orange)
+                }
+
+                Text(activeSeason.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Picker("Season", selection: $activeSeasonID) {
+                ForEach(seasons) { season in
+                    Text(season.displayName).tag(Optional(season.id))
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Button("New", systemImage: "plus", action: onNewSeason)
+                    .buttonStyle(.bordered)
+
+                Button("Manage", systemImage: "slider.horizontal.3", action: onManage)
+                    .buttonStyle(.borderedProminent)
+
+                Spacer(minLength: 0)
+
+                Button("Delete", systemImage: "trash", action: onDeleteSeason)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .disabled(seasons.count <= 1)
+            }
+        }
+        .padding(14)
+        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(.quaternary, lineWidth: 1)
+        }
+    }
+}
+
+private struct SeasonStatPill: View {
+    let value: String
+    let label: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(value)
+                .font(.caption.bold())
+                .monospacedDigit()
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(tint.opacity(0.12), in: Capsule())
+    }
+}
+
+private struct SeasonManagerSheet: View {
+    @Binding var season: Season
+    let seasons: [Season]
+    @Binding var activeSeasonID: UUID?
+    let canDelete: Bool
+    let onNewSeason: () -> Void
+    let onDeleteSeason: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Current Season") {
+                    TextField("Season name", text: $season.name)
+                    TextField("Game name", text: $season.gameName)
+                    TextField("Year", text: $season.year)
+                }
+
+                Section("Switch Season") {
+                    Picker("Active Season", selection: $activeSeasonID) {
+                        ForEach(seasons) { season in
+                            Text(season.displayName).tag(Optional(season.id))
+                        }
+                    }
+                }
+
+                Section("Summary") {
+                    LabeledContent("Teams", value: "\(season.teams.count)")
+                    LabeledContent("Match Notes", value: "\(season.matchNotes.count)")
+                    LabeledContent("Details", value: season.subtitle)
+                }
+
+                Section {
+                    Button("Create New Blank Season", systemImage: "calendar.badge.plus") {
+                        onNewSeason()
+                        dismiss()
+                    }
+
+                    Button("Delete This Season", systemImage: "trash", role: .destructive) {
+                        onDeleteSeason()
+                    }
+                    .disabled(!canDelete)
+                }
+            }
+            .navigationTitle("Manage Season")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
